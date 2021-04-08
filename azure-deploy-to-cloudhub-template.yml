@@ -1,0 +1,140 @@
+# Maven
+# Build your Java project and run tests with Apache Maven.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/java
+
+
+parameters:
+  env_name: ''
+  env_config_repo: ''
+  maven_cache_key: ''
+
+jobs:
+  # Track deployments on the environment.
+  - deployment: ${{ parameters.env_name }}Deploy
+    displayName: deploy to ${{ parameters.env_name }}
+    variables:
+#      - group: mule-nexus
+      - group: az-kv-${{ parameters.env_name }}
+    pool:
+      vmImage: 'Ubuntu-16.04'
+    # Creates an environment if it doesn't exist.
+    environment: ${{ parameters.env_name }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - checkout: self
+            - checkout: git://IMTD-Integration/${{ parameters.env_config_repo }}@refs/heads/master
+              persistCredentials: true
+              path: s/config
+            - checkout: git://IMTD-Integration/deploy-utils@refs/heads/master
+              persistCredentials: true
+              path: s/deploy-utils
+            - task: DownloadSecureFile@1
+              displayName: Download secure file
+              name: settings
+              inputs:
+                secureFile: 'settings.xml'
+            - task: Cache@2
+              inputs:
+                key: ${{ parameters.maven_cache_key }} #'maven | "$(Agent.OS)" |"$(Build.Repository.Name)"'
+                path: $(MAVEN_CACHE_FOLDER)
+              displayName: Cache Maven local repo
+            - task: MavenAuthenticate@0
+              inputs:
+                artifactsFeeds: 'IMTD-Integration'
+            - script: |
+                echo "Deploying $API_NAME to $ENVIRONMENT_NAME environment, from $AGENT_NAME running on $AGENT_OS"
+
+                #git clone -c http.extraheader="AUTHORIZATION: bearer ${token}" https://education-vic-gov-au@dev.azure.com/education-vic-gov-au/IMTD-Integration/_git/config-nonprod-common
+
+                cd config
+                git pull origin master
+                cd ..
+
+                cd deploy-utils
+                git pull origin master
+                cd ..
+
+                RESP_LOGIN=$(az login --service-principal --username=${AZURE_KV_CLIENT_ID} --password=${AZURE_KV_CLIENT_SECRET} --tenant=${AZURE_KV_TENANT_ID} --allow-no-subscription)
+                ANYPOINT_CLIENT_ID=$(az keyvault secret show --name ANYPOINT-CLIENT-ID --vault-name ${AZURE_KV_VAULT_NAME} | jq .value | tr -d '"')
+                ANYPOINT_CLIENT_SECRET=$(az keyvault secret show --name ANYPOINT-CLIENT-SECRET --vault-name ${AZURE_KV_VAULT_NAME} | jq .value | tr -d '"')
+                ANYPOINT_PLATFORM_CLIENT_ID=$(az keyvault secret show --name ANYPOINT-PLATFORM-CLIENT-ID --vault-name ${AZURE_KV_VAULT_NAME} | jq .value | tr -d '"')
+                ANYPOINT_PLATFORM_CLIENT_SECRET=$(az keyvault secret show --name ANYPOINT-PLATFORM-CLIENT-SECRET --vault-name ${AZURE_KV_VAULT_NAME} | jq .value | tr -d '"')
+                SECURE_PROPERTIES_KEY=$(az keyvault secret show --name SECURE-PROPERTIES-KEY --vault-name ${AZURE_KV_VAULT_NAME} | jq .value | tr -d '"')
+                API_VERSION=${API_NAME##*-}
+                echo "API_VERSION = $API_VERSION"
+
+                cd ${API_NAME}
+                ASSET_VERSION=$(mvn -s ${mvnSettings} help:evaluate -Dexpression=project.version -q -DforceStdout)
+                echo "ASSET_VERSION = $ASSET_VERSION"
+                cd ..
+
+                # Set execute permissions on deployment folder
+                chmod -R +x deploy-utils/scripts/deployments/*
+
+                # Load environment specific deployment variables from configuration
+                while read -r line; do declare  "$line"; done <config/${API_NAME}/${ENVIRONMENT_NAME}/deployment.properties
+
+                # Inject credentials and private keys from keyvault
+                # Generate export file to be injected with other environment variables
+                deploy-utils/scripts/deployments/inject-credentials.sh --client_id=${AZURE_KV_CLIENT_ID} --client_secret=${AZURE_KV_CLIENT_SECRET} --keyvault_name=${AZURE_KV_VAULT_NAME} --filename=config/${API_NAME}/${ENVIRONMENT_NAME}/resources/secrets/credentials.properties > credentials.properties.env
+
+                # source variables, ignoring failures
+                . credentials.properties.env || true
+                # deleting, ignoring failures
+                rm -f credentials.properties.env
+
+                # inject variables in credentials.properties
+                ## no inplace replacement supported
+                envsubst < config/${API_NAME}/${ENVIRONMENT_NAME}/resources/secrets/credentials.properties > credentials.properties.out
+
+                # move credentials.properties.out to credentials.properties
+                mv credentials.properties.out config/${API_NAME}/${ENVIRONMENT_NAME}/resources/secrets/credentials.properties
+
+                # Inject certificate into keystore.jks
+                mkdir -p config/${API_NAME}/${ENVIRONMENT_NAME}/resources/stores/
+                deploy-utils/scripts/deployments/inject-certificate.sh --key_name="${ENVIRONMENT_NAME^^}-KEYSTORE" --client_id=${AZURE_KV_CLIENT_ID} --client_secret=${AZURE_KV_CLIENT_SECRET} --keyvault_name=${AZURE_KV_VAULT_NAME} --target_keystore_path=config/${API_NAME}/${ENVIRONMENT_NAME}/resources/stores/keystore.jks --target_keystore_password=$(grep '.keystore.password' config/${API_NAME}/${ENVIRONMENT_NAME}/resources/secrets/credentials.properties | cut -d= -f2-) --target_keystore_key_password=$(grep '.keystore.key.password' config/${API_NAME}/${ENVIRONMENT_NAME}/resources/secrets/credentials.properties | cut -d= -f2-) --alias=${API_NAME} --secure_properties_key=${SECURE_PROPERTIES_KEY}
+
+                # Inject Keytab File
+                # deploy-utils/scripts/deployments/download-secret.sh --key_name=keytab-tst --client_id=${AZURE_KV_CLIENT_ID} --client_secret=${AZURE_KV_CLIENT_SECRET} --keyvault_name=${AZURE_KV_VAULT_NAME} --target_keytab_file_path=config/${API_NAME}/${ENVIRONMENT_NAME}/resources --target_keytab_file_name=svcMuleSoftdbEduMas2.keytab
+
+                # Copy Environment specific application configuration
+                cp -rf config/${API_NAME}/${ENVIRONMENT_NAME}/resources/* ${API_NAME}/src/main/resources/
+
+                # Inject secure.properties.key into app.properties
+                printf "\nsecure.properties.key=${SECURE_PROPERTIES_KEY}\n" >> config/${API_NAME}/${ENVIRONMENT_NAME}/env-config/app.properties
+
+                # Inject Anypoint Platform client id & secret into app.properties, to enable autodiscovery
+                printf "\nanypoint.platform.client_id=${ANYPOINT_PLATFORM_CLIENT_ID}\n" >> config/${API_NAME}/${ENVIRONMENT_NAME}/env-config/app.properties
+                printf "\nanypoint.platform.client_secret=${ANYPOINT_PLATFORM_CLIENT_SECRET}\n" >> config/${API_NAME}/${ENVIRONMENT_NAME}/env-config/app.properties
+
+                # Change directory to the api code directory
+                cd ${API_NAME}
+
+                # Build mvn artifact
+                mvn install -DskipTests -s ${mvnSettings} ${MAVEN_OPTS}
+                MULE_APP_NAME=$(find target -maxdepth 1 -name *.jar)
+
+                # Install anypoint cli
+                sudo npm install -g anypoint-cli@3.4.3
+
+                # Deploy to Exchange/Design Centre
+                ../deploy-utils/scripts/deployments/mule-exchange-artefacts-deploy.sh --client_id=${ANYPOINT_CLIENT_ID} --client_secret=${ANYPOINT_CLIENT_SECRET} --repository_name=${API_NAME} --cloudhub_org="${cloudhub_organisation}" --cloudhub_env=${cloudhub_environment} --api_version=${API_VERSION} --asset_version=${ASSET_VERSION} --api_artefacts_path=src/main/resources/api
+
+                # Deploy and wait for successful deployment
+                ../deploy-utils/scripts/deployments/cloudhub-deploy.sh --mule_jar_path=${MULE_APP_NAME} --client_id=${ANYPOINT_CLIENT_ID} --client_secret=${ANYPOINT_CLIENT_SECRET} --repository_name=${API_NAME} --app_name=${cloudhub_app_name} --cloudhub_org="${cloudhub_organisation}" --cloudhub_env=${cloudhub_environment} --mule_runtime_version=${mule_runtime_version} --cloudhub_worker_count=${cloudhub_worker_count} --cloudhub_worker_size=${cloudhub_worker_size} --cloudhub_region=${cloudhub_region} --app_properties_filepath=../config/${API_NAME}/${ENVIRONMENT_NAME}/env-config/app.properties
+              env:
+                AZURE_KV_VAULT_NAME: $(AZURE_KV_VAULT_NAME)
+                AZURE_KV_CLIENT_ID: $(AZURE_KV_CLIENT_ID)
+                AZURE_KV_CLIENT_SECRET: $(AZURE_KV_CLIENT_SECRET)
+                AZURE_KV_TENANT_ID: $(AZURE_KV_TENANT_ID)
+                mvnSettings: $(settings.secureFilePath)
+                API_NAME: $(Build.Repository.Name)
+                ENVIRONMENT_NAME: $(Environment.Name)
+                MAVEN_OPTS: $(MAVEN_OPTS)
+                token: $(System.AccessToken)
+                SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+                MULE_USERNAME: $(MULE_USERNAME)
+                MULE_PASSWORD: $(MULE_PASSWORD)

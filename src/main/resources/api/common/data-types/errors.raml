@@ -1,0 +1,9 @@
+#%RAML 1.0 DataType
+description: Error response array definition
+
+type: object
+properties:
+    errors:
+      type: array
+      items: !include error.raml
+      required: false

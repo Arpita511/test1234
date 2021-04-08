@@ -1,0 +1,10 @@
+{
+  "message": "Hello",
+  "_links": [
+    {
+      "href": "/hello/v1/loging/Hello",
+      "rel": "self",
+      "method": "GET"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<sub-flow name="s-splunk-api-v1:common:set-transaction_id-subflow" doc:id="af041f78-576d-4122-aeba-02650fed6914" >
+		<set-variable value='#[if (isEmpty(attributes.headers."x_transaction_id")) uuid() else attributes.headers."x_transaction_id"]' doc:name="Set Transaction Id" doc:id="c8b74b54-58c9-431d-8099-813fad9cafe3" variableName="transaction_id"/>
+	</sub-flow>
+
+	<!-- to send notification using cloudhub notification api -->
+	<sub-flow name="s-splunk-api-v1:common:create-notification-subflow" doc:id="efa8dff2-cf0c-4a22-acc0-9bea778adf3f">
+		<async doc:name="Async" doc:id="d19655a2-e430-4dd7-8b42-39b592edf559">
+			<logger level="INFO" doc:name="Info Start Logger" doc:id="5c786cae-db82-4305-9fb3-64aee2a2c819" category="cloudhub.notification.start" message="Notification Request received for transaction Id #[vars.transaction_id]" />
+			<ee:transform doc:name="Set Headers and Transform to Notification API Format" doc:id="d09b775a-39a3-4250-919d-4d6a9f0590af">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+import * from dw::Runtime
+---
+{
+"domain": app.name,
+"priority": vars.notificationPriority,
+"message": payload.^raw as String, 
+"transactionId": correlationId
+}]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="notificationRequestHeaders"><![CDATA[%dw 2.0
+output application/java
+import * from dw::Runtime
+var cloudhubAPIToken = prop("cloudhub.api.token")
+var ionAPIToken = prop("ion.api.token")
+---
+{
+"X-ION-Authenticate": if(cloudhubAPIToken != null) cloudhubAPIToken else ionAPIToken,
+"X-ANYPNT-ENV-ID": Mule::p('secure::cloudhub.environment'),
+"Content-Type": "application/json"
+}]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+			<http:request method="POST" doc:name="Call Cloudhub Notification API - Create Notification" doc:id="ad65685b-8bff-4a27-998b-8f2d547c69a3" config-ref="Cloud_Notification_API_Request_Configuration" path="${cloudhub.api.http.requestor.path}">
+				<http:headers><![CDATA[#[vars.notificationRequestHeaders]]]></http:headers>
+			</http:request>
+			<logger level="INFO" doc:name="Info End Logger" doc:id="9c2367a3-e988-4b04-8d54-2e5e6a076f70" message="Notification Response processed for transaction Id #[vars.transaction_id]" category="cloudhub.notification.end" />
+		</async>
+	</sub-flow>
+
+</mule>

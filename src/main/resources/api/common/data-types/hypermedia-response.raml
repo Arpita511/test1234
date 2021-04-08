@@ -1,0 +1,17 @@
+#%RAML 1.0 DataType
+description: Student System Student Object definition
+
+type: object
+properties:
+  href:
+    type: string
+    description: Absolute URI of the resoure.
+    required: true
+  rel:
+    type: string
+    description: Name of the relation to the target resource.
+    required: true
+  method:
+    type: string
+    description: HTTP Verb that MUST be used to make a request to the target of the link..
+    required: false

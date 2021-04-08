@@ -1,0 +1,27 @@
+#%RAML 1.0
+title: Splunk
+version: v1
+baseUri: /hello/v1
+securedBy: [basic]
+securitySchemes:
+  basic:
+    type: Basic Authentication
+
+types:
+  loging: !include data-types/loging.raml
+
+traits:
+  client_id_enforceable: !include common/traits/client-id-enforceable.raml
+  errorable: !include common/traits/errorable.raml
+  trackable: !include common/traits/trackable.raml
+  pageable: !include common/traits/pageable.raml
+
+/loging: # optional resource
+  get: # HTTP method declaration
+    is: [trackable, client_id_enforceable, errorable]
+    responses: # declare a response
+      200: # HTTP status code
+        body: # declare content of response
+          application/json: # media type
+            type: loging
+            example: !include examples/get-loging-response.json

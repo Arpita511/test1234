@@ -1,0 +1,13 @@
+#%RAML 1.0 DataType
+description: Hello World Entity Object definition
+
+type: object
+properties:   
+  message:
+    type: string
+    description: Greeting message.
+    required: true
+  _links:
+    required: false
+    type: array
+    items: !include ../common/data-types/hypermedia-response.raml

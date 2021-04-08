@@ -1,0 +1,86 @@
+# Maven
+# Build your Java project and run tests with Apache Maven.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/java
+
+trigger: 
+- develop
+- master
+
+variables:
+  - group: mule-nexus
+  - name: MAVEN_CACHE_FOLDER
+    value: $(Pipeline.Workspace)/.m2/repository
+  - name: MAVEN_OPTS
+    value: '-Dmaven.repo.local=$(MAVEN_CACHE_FOLDER)'
+  - name: BUILD_NUMBER
+    value: $(Build.BuildNumber)
+  - name: mvn_cache_key
+    value: maven | "$(Agent.OS)" | "$(Build.Repository.Name)"
+
+stages:
+- stage: mvnTests
+  jobs:
+  - job: runTestsJob
+    steps:
+    - task: DownloadSecureFile@1
+      displayName: Download secure file
+      name: settings
+      inputs:
+        secureFile: 'settings.xml'
+    - task: Cache@2
+      inputs:
+        key: '$(mvn_cache_key) | pom.xml'
+        path: $(MAVEN_CACHE_FOLDER)
+      displayName: Cache Maven local repo
+    - task: MavenAuthenticate@0
+      inputs:
+        artifactsFeeds: 'IMTD-Integration'
+    - script: |
+        mvn test -s ${mvnSettings} ${MAVEN_OPTS}
+      env:
+        mvnSettings: $(settings.secureFilePath)
+        MAVEN_OPTS: $(MAVEN_OPTS)
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        MULE_USERNAME: $(MULE_USERNAME)
+        MULE_PASSWORD: $(MULE_PASSWORD)
+
+- stage: deployTst
+  dependsOn: [mvnTests]
+  condition: succeeded('mvnTests')
+  jobs:
+  - template: azure-deploy-to-cloudhub-template.yml  # Template reference
+    parameters:
+      env_name: tst
+      env_config_repo: config-nonprod-common
+      maven_cache_key: '$(mvn_cache_key) | $(Build.Repository.Name)/pom.xml'
+
+- stage: deploySit
+  dependsOn: [mvnTests]
+  condition: succeeded('mvnTests')
+  jobs:
+  - template: azure-deploy-to-cloudhub-template.yml  # Template reference
+    parameters:
+      env_name: sit
+      env_config_repo: config-nonprod-common
+      maven_cache_key: '$(mvn_cache_key) | $(Build.Repository.Name)/pom.xml'
+
+- stage: deployUat
+  dependsOn: [mvnTests]
+  condition: succeeded('mvnTests')
+  jobs:
+  - template: azure-deploy-to-cloudhub-template.yml  # Template reference
+    parameters:
+      env_name: uat
+      env_config_repo: config-nonprod-common
+      maven_cache_key: '$(mvn_cache_key) | $(Build.Repository.Name)/pom.xml'
+
+# - stage: deployProd
+#   dependsOn: [mvnTests]
+#   condition: succeeded('mvnTests')
+#   jobs:
+#   - template: azure-deploy-to-cloudhub-template.yml  # Template reference
+#     parameters:
+#       env_name: prod
+#       env_config_repo: config-prod-common
+#       maven_cache_key: '$(mvn_cache_key) | $(Build.Repository.Name)/pom.xml'

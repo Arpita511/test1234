@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:api-gateway="http://www.mulesoft.org/schema/mule/api-gateway"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:spring="http://www.mulesoft.org/schema/mule/spring" xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+	xmlns:tls="http://www.mulesoft.org/schema/mule/tls"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" 
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" 
+	xmlns="http://www.mulesoft.org/schema/mule/core" 
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd 
+	http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+    http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd
+    http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
+    http://www.mulesoft.org/schema/mule/spring http://www.mulesoft.org/schema/mule/spring/current/mule-spring.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd">
+
+
+	<!--<api-gateway:autodiscovery apiId="${api.id}" ignoreBasePath="true" doc:name="API Autodiscovery" doc:id="03515470-41f3-4f6c-a2d0-82608c14be46" flowRef="s-splunk-api-v1-main" />-->
+	
+	<!-- http listener configuration -->
+    <http:listener-config name="s-splunk-api-v1-httpListenerConfig" doc:name="HTTP Listener config" doc:id="ffb869e4-6f0b-485a-a7de-7f2d8ba1c2be" basePath="${s-splunk-api-v1.basepath}">
+		<http:listener-connection host="0.0.0.0" port="${https.private.port}" connectionIdleTimeout="${s-splunk-api-v1.connection.idle.timeout}" protocol="HTTPS" tlsContext="Global_TLS_Context_Listener">
+		</http:listener-connection>
+    </http:listener-config>
+
+    <apikit:config name="s-splunk-api-v1-config" api="mule-s-splunk-api-v1.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+	
+	<!-- config properties -->
+	<configuration-properties doc:name="Load_App_Properties" doc:id="c1d9d175-38cb-45a5-92fb-74f0772becbe" file="app-defaults.properties" />
+	
+	<!-- secure config properties -->
+	<secure-properties:config name="Load_Secrets" doc:name="Secure Properties Config" doc:id="d1df6f6c-f349-4cb2-a571-3ec17a428dbd" file="secrets/credentials.properties" key="${secure.properties.key}" >
+	</secure-properties:config>
+	
+	<global-property name="secure.properties.key" value="testtesttesttesttesttesttesttest"/>
+	
+	<!-- Global TLS Context HTTP Listener config -->
+	<tls:context name="Global_TLS_Context_Listener" doc:name="TLS Context" doc:id="9a0d7ce3-29e9-47b6-bd64-d40e2416a449" >
+		<tls:key-store path="${s-splunk-api-v1.keystore.path}" keyPassword="${secure::s-splunk-api-v1.keystore.key.password}" password="${secure::s-splunk-api-v1.keystore.password}" />
+	</tls:context>
+	
+    <!-- Basic security spring config -->
+	<spring:config name="Spring_Config" files="spring-config/beans.xml" doc:id="e50f73bc-1b74-4ab6-b36a-14def11ba4d1" />
+	
+	<spring:security-manager>
+    	<spring:delegate-security-provider name="Memory_Provider" delegate-ref="Authentication_Manager" />
+ 	</spring:security-manager>
+	
+ 	<!-- http cloudhub notification api requestor config -->
+ 	<http:request-config name="Cloud_Notification_API_Request_Configuration" doc:name="HTTP Request configuration" doc:id="d7984f5c-cc5f-4b0d-858c-02a855ad9a0a" basePath="${cloudhub.api.http.requestor.base.path}" responseTimeout="${cloudhub.api.http.requestor.response.timeout}">
+		<http:request-connection host="${cloudhub.api.http.requestor.host}" protocol="HTTPS">
+		</http:request-connection>
+	</http:request-config>
+</mule>

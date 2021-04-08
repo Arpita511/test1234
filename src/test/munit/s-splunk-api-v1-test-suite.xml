@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:munit="http://www.mulesoft.org/schema/mule/munit" xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+		http://www.mulesoft.org/schema/mule/munit-tools  http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+	<munit:config name="s-splunk-api-v1-test-suite.xml" />
+	<munit:test name="s-splunk-api-v1-test-suite-get:\loging\(message):s-splunk-api-v1-configTest" doc:id="27d9f93a-8017-46fc-a6ad-3b6ba6065245" description="Test">
+		<munit:execution >
+		<munit:set-event doc:name="Set Event" doc:id="8e9c22e7-6f93-43dc-8c6b-693bf06d66fd">
+			<munit:attributes value="#[{uriParams : {'message' :'Hello'}}]" />
+		</munit:set-event>
+			<flow-ref doc:name="Flow-ref to get:\loging\(message):s-splunk-api-v1-config" doc:id="9b76df21-7c7e-40c4-8e90-27a8252dbd22" name="get:\loging\(message):s-splunk-api-v1-config"/>
+		</munit:execution>
+		<munit:validation >
+			<set-variable value="#[MunitTools::getResourceAsString('samples/responses/get-loging-response.json','UTF-8')]" doc:name="Set Expected API Response" doc:id="063fb079-177c-4dd7-a87e-172d097ea6a7" variableName="expected_api_response" mimeType="application/json" encoding="UTF-8"/>			
+			<munit-tools:assert-that doc:name="Assert API Response" doc:id="855946fa-7b2f-4b20-8d63-c3609f7c332a" expression="#[payload]" is="#[MunitTools::equalTo(vars.expected_api_response)]"/>
+		</munit:validation>
+	</munit:test>
+
+</mule>

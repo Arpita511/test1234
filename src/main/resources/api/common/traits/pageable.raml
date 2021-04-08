@@ -1,0 +1,17 @@
+#%RAML 1.0 Trait
+
+queryParameters:
+  page:
+    description: The page number requested, starting from 1
+    type: integer
+    required: false
+    default: 1
+  page_size:
+    description: The number of records per page
+    type: integer
+    required: false
+    default: 10
+  since:
+    description: Get everything "since" some ID or timestamp
+    type: string
+    required: false
